@@ -16,6 +16,7 @@ type AppModule = "rencana" | "dashboard" | "timeline" | "database";
 
 const STORAGE_KEY = "field-trip-simulator.assignments.v1";
 const API_URL_KEY = "field-trip-simulator.api-url";
+const WRITE_CLIENT_HEADER = "field-trip-simulator-v2";
 const DEFAULT_API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
   (import.meta.env.DEV ? "" : "https://field-trip-simulator.vercel.app");
@@ -79,12 +80,16 @@ export function App() {
   // Track if we are currently performing initial backend fetch to prevent sync race conditions
   const [isHydrating, setIsHydrating] = useState(true);
   const backendSnapshotRef = useRef<AssignmentInput[] | null>(null);
+  const backendLoadedRef = useRef(false);
+  const hasUserEditRef = useRef(false);
 
   // Load from database backend on boot & when API URL changes
   useEffect(() => {
     let active = true;
     async function loadFromBackend() {
       setIsHydrating(true);
+      backendLoadedRef.current = false;
+      hasUserEditRef.current = false;
       try {
         const res = await fetch(`${apiUrl}/api/assignments`);
         if (!res.ok) throw new Error("HTTP error " + res.status);
@@ -92,6 +97,7 @@ export function App() {
         if (active && Array.isArray(data)) {
           backendSnapshotRef.current = data;
           setAssignments(data);
+          backendLoadedRef.current = true;
           // Set activeNo if not already pointing to a valid one
           if (!data.some((a) => a.no === activeNo)) {
             setActiveNo(data[0]?.no ?? 0);
@@ -138,13 +144,14 @@ export function App() {
       }).format(new Date()),
     );
 
-    if (isHydrating || !backendSnapshotRef.current) return;
+    if (isHydrating || !backendLoadedRef.current || !backendSnapshotRef.current || !hasUserEditRef.current) return;
 
     const previous = backendSnapshotRef.current;
     const timer = setTimeout(async () => {
       try {
         await syncAssignmentChanges(apiUrl, previous, assignments);
         backendSnapshotRef.current = assignments;
+        hasUserEditRef.current = false;
       } catch (err) {
         console.warn("⚠️ Sinkronisasi database backend tertunda:", err);
       }
@@ -156,6 +163,13 @@ export function App() {
   function openAssignment(assignmentNo: number) {
     setActiveNo(assignmentNo);
     setActiveModule("rencana");
+  }
+
+  function handleAssignmentsChange(nextAssignments: AssignmentInput[]) {
+    if (backendLoadedRef.current) {
+      hasUserEditRef.current = true;
+    }
+    setAssignments(nextAssignments);
   }
 
   return (
@@ -211,7 +225,7 @@ export function App() {
           computedAssignments={computedAssignments}
           savedAt={savedAt}
           onActiveNoChange={setActiveNo}
-          onAssignmentsChange={setAssignments}
+          onAssignmentsChange={handleAssignmentsChange}
         />
       )}
       {activeModule === "database" && (
@@ -219,7 +233,7 @@ export function App() {
           apiUrl={apiUrl}
           assignments={assignments}
           onApiUrlChange={setApiUrl}
-          onAssignmentsChange={setAssignments}
+          onAssignmentsChange={handleAssignmentsChange}
         />
       )}
     </main>
@@ -252,7 +266,7 @@ async function syncAssignmentChanges(
       requests.push(
         fetch(`${apiUrl}/api/assignments/${no}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Assignment-Client": WRITE_CLIENT_HEADER },
           body: JSON.stringify(next),
         }),
       );
@@ -261,7 +275,12 @@ async function syncAssignmentChanges(
 
   for (const no of previousByNo.keys()) {
     if (!nextByNo.has(no)) {
-      requests.push(fetch(`${apiUrl}/api/assignments/${no}`, { method: "DELETE" }));
+      requests.push(
+        fetch(`${apiUrl}/api/assignments/${no}`, {
+          method: "DELETE",
+          headers: { "X-Assignment-Client": WRITE_CLIENT_HEADER },
+        }),
+      );
     }
   }
 

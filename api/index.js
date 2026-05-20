@@ -14,6 +14,7 @@ app.use(express.json());
 // ── Default MongoDB Atlas Connection String ───────────────────────────────────
 const MONGODB_URI = process.env.MONGODB_URI;
 const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+const WRITE_CLIENT_HEADER = "field-trip-simulator-v2";
 
 // ── Default BPKP Workbook Seeds ──────────────────────────────────────────────
 const seedAssignments = [
@@ -198,6 +199,14 @@ function isPlainObjectPayload(payload) {
   return payload && typeof payload === "object" && !Array.isArray(payload);
 }
 
+function requireWriteClient(req, res) {
+  if (req.get("X-Assignment-Client") === WRITE_CLIENT_HEADER) return true;
+  res.status(428).json({
+    error: "Write rejected. Refresh the app so it uses the current database-safe sync client.",
+  });
+  return false;
+}
+
 async function replaceAssignments(payload) {
   await Assignment.deleteMany({});
   return Assignment.insertMany(payload.map(stripMongoReadonlyFields));
@@ -206,6 +215,7 @@ async function replaceAssignments(payload) {
 // POST a new assignment only. Bulk replacement is intentionally explicit below.
 app.post("/api/assignments", async (req, res) => {
   try {
+    if (!requireWriteClient(req, res)) return;
     await connectToDatabase();
     const payload = req.body;
 
@@ -241,6 +251,7 @@ app.post("/api/assignments", async (req, res) => {
 // Explicit full database replacement for deliberate backup restore / raw JSON edits.
 app.post("/api/assignments/replace", async (req, res) => {
   try {
+    if (!requireWriteClient(req, res)) return;
     await connectToDatabase();
     const payload = req.body;
 
@@ -267,6 +278,7 @@ app.post("/api/assignments/replace", async (req, res) => {
 // PUT (update) an existing assignment by its 'no'
 app.put("/api/assignments/:no", async (req, res) => {
   try {
+    if (!requireWriteClient(req, res)) return;
     await connectToDatabase();
     const no = parseInt(req.params.no, 10);
     const payload = stripMongoReadonlyFields(req.body);
@@ -304,6 +316,7 @@ app.put("/api/assignments/:no", async (req, res) => {
 // DELETE an assignment by its 'no'
 app.delete("/api/assignments/:no", async (req, res) => {
   try {
+    if (!requireWriteClient(req, res)) return;
     await connectToDatabase();
     const no = parseInt(req.params.no, 10);
 

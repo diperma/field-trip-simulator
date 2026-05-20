@@ -30,6 +30,7 @@ type DbStatus = {
 };
 
 const API_URL_KEY = "field-trip-simulator.api-url";
+const WRITE_CLIENT_HEADER = "field-trip-simulator-v2";
 
 export function DatabasePage({
   apiUrl,
@@ -132,7 +133,7 @@ export function DatabasePage({
       const base = apiUrl ? apiUrl.replace(/\/$/, "") : "";
       const res = await fetch(`${base}/api/assignments/replace?confirm=replace-assignments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Assignment-Client": WRITE_CLIENT_HEADER },
         body: JSON.stringify(parsed),
       });
       if (!res.ok) throw new Error("Gagal menyimpan data ke database server.");
@@ -162,7 +163,7 @@ export function DatabasePage({
         const base = apiUrl ? apiUrl.replace(/\/$/, "") : "";
         const res = await fetch(`${base}/api/assignments/replace?confirm=replace-assignments`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Assignment-Client": WRITE_CLIENT_HEADER },
           body: JSON.stringify(parsed),
         });
 
