@@ -52,6 +52,9 @@ export function calculateMember(
 
   if (!employee) warnings.push("Pegawai tidak ditemukan dalam Daftar Pegawai D302.");
   if (!rate) warnings.push("Provinsi tidak ditemukan dalam tabel SBM TA 2026.");
+  if (rate && member.assignmentType === "DL") {
+    warnings.push(...missingDlRateWarnings(rate, grade));
+  }
   if (member.hp !== daysInclusive(member.startDate, member.endDate)) {
     warnings.push("HP tidak sesuai dengan jumlah hari dari tanggal mulai hingga selesai.");
   }
@@ -95,6 +98,15 @@ export function calculateMember(
   };
 }
 
+function missingDlRateWarnings(rate: ProvinceRate, grade: string): string[] {
+  const warnings: string[] = [];
+  if (rate.dailyAllowance === null) warnings.push(`Uang harian belum tersedia untuk ${rate.province}.`);
+  if (lodgingRateForGrade(rate, grade) === 0) warnings.push(`Biaya penginapan belum tersedia untuk ${rate.province}/${grade || "golongan kosong"}.`);
+  if (rate.transport === null) warnings.push(`Transport belum tersedia untuk ${rate.province}.`);
+  if (rate.taxiRoundTrip === null) warnings.push(`Taksi PP belum tersedia untuk ${rate.province}.`);
+  return warnings;
+}
+
 export function sumCosts(costs: CostBreakdown[]): CostBreakdown {
   return costs.reduce(
     (total, cost) => ({
@@ -123,11 +135,11 @@ export function lodgingRateForGrade(rate: ProvinceRate | undefined, grade: strin
 
   switch (gradeGroup(grade)) {
     case "es2":
-      return rate.lodgingEsII;
+      return rate.lodgingEsII ?? 0;
     case "iv":
-      return rate.lodgingGolIV;
+      return rate.lodgingGolIV ?? 0;
     case "iiiIi":
-      return rate.lodgingGolIIIOrII;
+      return rate.lodgingGolIIIOrII ?? 0;
     default:
       return 0;
   }
