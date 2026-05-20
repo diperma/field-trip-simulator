@@ -12,8 +12,8 @@ app.use(cors());
 app.use(express.json());
 
 // ── Default MongoDB Atlas Connection String ───────────────────────────────────
-const DEFAULT_MONGODB_URI = "mongodb+srv://dipermapmp_db_user:Diperma2026!@field-trip.3wstpuh.mongodb.net/field-trip-simulator?appName=field-trip";
-const MONGODB_URI = process.env.MONGODB_URI || DEFAULT_MONGODB_URI;
+const MONGODB_URI = process.env.MONGODB_URI;
+const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 
 // ── Default BPKP Workbook Seeds ──────────────────────────────────────────────
 const seedAssignments = [
@@ -75,27 +75,39 @@ const AssignmentSchema = new mongoose.Schema({
 const Assignment = mongoose.models.Assignment || mongoose.model("Assignment", AssignmentSchema);
 
 // ── Database Connection Cache ─────────────────────────────────────────────────
-let cachedConnection = null;
 let useLocalFallback = false;
 const LOCAL_DB_PATH = path.join(process.cwd(), "local-backup-db.json");
 
 async function connectToDatabase() {
-  if (useLocalFallback) {
-    return null;
+  // If Mongoose is already fully connected, clear fallback and return the active connection
+  if (mongoose.connection.readyState === 1) {
+    useLocalFallback = false;
+    return mongoose.connection;
   }
-  if (cachedConnection) {
-    return cachedConnection;
+
+  if (!MONGODB_URI) {
+    if (isProduction) {
+      throw new Error("MONGODB_URI is not configured for production.");
+    }
+    useLocalFallback = true;
+    return null;
   }
 
   try {
-    const conn = await mongoose.connect(MONGODB_URI, {
+    // Attempt Mongoose connection with a 5-second server selection timeout
+    await mongoose.connect(MONGODB_URI, {
       bufferCommands: false,
+      serverSelectionTimeoutMS: 5000,
     });
-    cachedConnection = conn;
+    useLocalFallback = false;
     console.log("☁️ Connected successfully to MongoDB Atlas Cloud");
-    return conn;
+    return mongoose.connection;
   } catch (error) {
-    console.warn("⚠️ MongoDB Atlas connection failed. Falling back to offline local file storage:", error.message);
+    if (isProduction) {
+      useLocalFallback = false;
+      throw new Error(`MongoDB Atlas connection failed: ${error.message}`);
+    }
+    console.warn("⚠️ MongoDB Atlas connection failed. Falling back to local development file storage for this request:", error.message);
     useLocalFallback = true;
     return null;
   }
@@ -128,24 +140,34 @@ function writeLocalDb(data) {
 
 // GET Database Status Check
 app.get("/api/db-status", async (req, res) => {
-  await connectToDatabase();
-  if (useLocalFallback) {
-    res.json({
-      status: "connected",
-      storageType: "Local JSON File",
-      details: `Saving to local disk at ${LOCAL_DB_PATH}`,
-      dbName: "local-backup-db.json",
-      uri: "local-file-system",
-    });
-  } else {
+  try {
+    await connectToDatabase();
+    if (useLocalFallback) {
+      return res.json({
+        status: "connected",
+        storageType: "Local Development JSON",
+        details: `Saving to local disk at ${LOCAL_DB_PATH}`,
+        dbName: "local-backup-db.json",
+        uri: "local-file-system",
+      });
+    }
+
     // Mask sensitive credentials
     const maskedUri = MONGODB_URI.replace(/:([^@]+)@/, ":*****@");
-    res.json({
+    return res.json({
       status: "connected",
       storageType: "MongoDB Atlas Cloud",
       details: "Connected to Atlas cluster",
       dbName: mongoose.connection.name,
       uri: maskedUri,
+    });
+  } catch (error) {
+    return res.status(503).json({
+      status: "disconnected",
+      storageType: "Unavailable",
+      details: error.message,
+      dbName: "",
+      uri: MONGODB_URI ? "configured" : "missing MONGODB_URI",
     });
   }
 });
@@ -159,11 +181,7 @@ app.get("/api/assignments", async (req, res) => {
       return res.json(data);
     }
 
-    let records = await Assignment.find().sort({ no: 1 });
-    // Auto-seed if database is empty
-    if (records.length === 0) {
-      records = await Assignment.insertMany(seedAssignments);
-    }
+    const records = await Assignment.find().sort({ no: 1 });
     res.json(records);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -246,23 +264,6 @@ app.delete("/api/assignments/:no", async (req, res) => {
 
     await Assignment.deleteOne({ no });
     res.json({ success: true, deletedNo: no });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST seed / reset database
-app.post("/api/assignments/seed", async (req, res) => {
-  try {
-    await connectToDatabase();
-    if (useLocalFallback) {
-      writeLocalDb(seedAssignments);
-      return res.json(seedAssignments);
-    }
-
-    await Assignment.deleteMany({});
-    const records = await Assignment.insertMany(seedAssignments);
-    res.json(records);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

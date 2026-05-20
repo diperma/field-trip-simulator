@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // ── Default MongoDB Atlas Connection String ───────────────────────────────────
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://dipermapmp_db_user:Diperma2026!@field-trip.3wstpuh.mongodb.net/field-trip-simulator?appName=field-trip";
+const MONGODB_URI = process.env.MONGODB_URI;
 
 // ── Default BPKP Workbook Seeds ──────────────────────────────────────────────
 const seedAssignments = [
@@ -67,6 +67,11 @@ const Assignment = mongoose.models.Assignment || mongoose.model("Assignment", As
 
 async function runSeeder() {
   console.log("🚀 Starting MongoDB Cloud Seeder Utility...");
+
+  if (!MONGODB_URI) {
+    console.error("❌ MONGODB_URI is required. Set it in your environment before running this utility.");
+    process.exit(1);
+  }
   
   // Mask connection string
   const maskedUri = MONGODB_URI.replace(/:([^@]+)@/, ":*****@");

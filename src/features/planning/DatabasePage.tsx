@@ -3,11 +3,9 @@ import {
   CheckCircle2,
   Database,
   Download,
-  FileJson,
   FileSpreadsheet,
   Play,
   RefreshCw,
-  RotateCcw,
   Server,
   Upload,
 } from "lucide-react";
@@ -17,9 +15,10 @@ import { employees } from "../../data/employees";
 import { provinceRates } from "../../data/rates";
 
 type DatabasePageProps = {
+  apiUrl: string;
   assignments: AssignmentInput[];
+  onApiUrlChange: (apiUrl: string) => void;
   onAssignmentsChange: (assignments: AssignmentInput[]) => void;
-  onResetSeeds: () => Promise<void>;
 };
 
 type DbStatus = {
@@ -30,11 +29,14 @@ type DbStatus = {
   uri: string;
 };
 
-export function DatabasePage({ assignments, onAssignmentsChange, onResetSeeds }: DatabasePageProps) {
-  // Configured Backend URL (for GitHub Pages deployment pointing to Vercel)
-  const [apiUrl, setApiUrl] = useState(() => {
-    return window.localStorage.getItem("field-trip-simulator.api-url") || "";
-  });
+const API_URL_KEY = "field-trip-simulator.api-url";
+
+export function DatabasePage({
+  apiUrl,
+  assignments,
+  onApiUrlChange,
+  onAssignmentsChange,
+}: DatabasePageProps) {
 
   // DB Connection Info
   const [dbInfo, setDbInfo] = useState<DbStatus | null>(null);
@@ -49,9 +51,6 @@ export function DatabasePage({ assignments, onAssignmentsChange, onResetSeeds }:
     type: "idle",
     message: "",
   });
-
-  // Reset confirmation
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // Sync JSON editor when assignments state changes from database
   useEffect(() => {
@@ -86,12 +85,12 @@ export function DatabasePage({ assignments, onAssignmentsChange, onResetSeeds }:
 
   // Save Vercel API URL configuration
   function handleSaveApiUrl(url: string) {
-    const trimmed = url.trim();
-    setApiUrl(trimmed);
+    const trimmed = url.trim().replace(/\/$/, "");
+    onApiUrlChange(trimmed);
     if (trimmed) {
-      window.localStorage.setItem("field-trip-simulator.api-url", trimmed);
+      window.localStorage.setItem(API_URL_KEY, trimmed);
     } else {
-      window.localStorage.removeItem("field-trip-simulator.api-url");
+      window.localStorage.removeItem(API_URL_KEY);
     }
     setPingStatus("idle");
   }
@@ -310,7 +309,7 @@ export function DatabasePage({ assignments, onAssignmentsChange, onResetSeeds }:
           <div className="warning-banner" style={{ marginTop: 15 }}>
             <AlertTriangle size={18} />
             <div>
-              <strong>Koneksi Gagal:</strong> {pingError}. Aplikasi otomatis berjalan dalam mode **Offline Fallback** (menggunakan database berkas lokal `local-backup-db.json` pada disk localhost).
+              <strong>Koneksi Gagal:</strong> {pingError}. Data belum tersambung ke MongoDB sampai endpoint API sehat.
             </div>
           </div>
         )}
@@ -363,7 +362,7 @@ export function DatabasePage({ assignments, onAssignmentsChange, onResetSeeds }:
 
       {/* ── Section 3: Data Operations & Backup/Restore ── */}
       <section className="dashboard-panel" style={{ marginBottom: 30 }}>
-        <h3>💾 Ekspor, Impor, & Pemulihan Database</h3>
+        <h3>Ekspor & Impor Database</h3>
         <p>Gunakan operasi di bawah ini untuk mencadangkan data Anda atau menyalin data rencana penugasan ke Excel.</p>
 
         <div className="db-actions-grid" style={{ display: "flex", gap: 15, flexWrap: "wrap", marginTop: 20 }}>
@@ -400,37 +399,6 @@ export function DatabasePage({ assignments, onAssignmentsChange, onResetSeeds }:
               style={{ display: "none" }}
             />
           </label>
-
-          {/* Reset Seeds */}
-          {showResetConfirm ? (
-            <div className="confirm-inline" style={{ padding: "0 10px" }}>
-              <span style={{ fontSize: "0.9rem" }}>Hapus semua data & reset ke default?</span>
-              <button
-                className="confirm-yes compact"
-                type="button"
-                onClick={async () => {
-                  await onResetSeeds();
-                  setShowResetConfirm(false);
-                }}
-              >
-                Ya, Reset
-              </button>
-              <button type="button" className="compact" onClick={() => setShowResetConfirm(false)}>
-                Batal
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="icon-button danger subtle"
-              onClick={() => setShowResetConfirm(true)}
-              title="Kembalikan contoh awal workbook"
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", width: "auto" }}
-            >
-              <RotateCcw size={16} />
-              Reset Database Seed
-            </button>
-          )}
         </div>
       </section>
 

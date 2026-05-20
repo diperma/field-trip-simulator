@@ -15,6 +15,14 @@ import { DatabasePage } from "./features/planning/DatabasePage";
 type AppModule = "rencana" | "dashboard" | "timeline" | "database";
 
 const STORAGE_KEY = "field-trip-simulator.assignments.v1";
+const API_URL_KEY = "field-trip-simulator.api-url";
+const DEFAULT_API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? "" : "https://field-trip-simulator.vercel.app");
+
+function getApiBaseUrl(): string {
+  return (window.localStorage.getItem(API_URL_KEY) || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+}
 
 function formatDateLocal(d: Date): string {
   const y = d.getFullYear();
@@ -65,7 +73,7 @@ export function App() {
 
   // Backend Vercel Endpoint Configuration State
   const [apiUrl, setApiUrl] = useState(() => {
-    return window.localStorage.getItem("field-trip-simulator.api-url") || "";
+    return getApiBaseUrl();
   });
 
   // Track if we are currently performing initial backend fetch to prevent sync race conditions
@@ -77,15 +85,14 @@ export function App() {
     async function loadFromBackend() {
       setIsHydrating(true);
       try {
-        const base = apiUrl ? apiUrl.replace(/\/$/, "") : "";
-        const res = await fetch(`${base}/api/assignments`);
+        const res = await fetch(`${apiUrl}/api/assignments`);
         if (!res.ok) throw new Error("HTTP error " + res.status);
         const data = await res.json();
-        if (active && Array.isArray(data) && data.length > 0) {
+        if (active && Array.isArray(data)) {
           setAssignments(data);
           // Set activeNo if not already pointing to a valid one
           if (!data.some((a) => a.no === activeNo)) {
-            setActiveNo(data[0].no);
+            setActiveNo(data[0]?.no ?? 0);
           }
         }
       } catch (err) {
@@ -133,8 +140,7 @@ export function App() {
     if (!isHydrating) {
       const timer = setTimeout(async () => {
         try {
-          const base = apiUrl ? apiUrl.replace(/\/$/, "") : "";
-          const res = await fetch(`${base}/api/assignments`, {
+          const res = await fetch(`${apiUrl}/api/assignments`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(assignments),
@@ -148,27 +154,6 @@ export function App() {
       return () => clearTimeout(timer);
     }
   }, [assignments, apiUrl, isHydrating]);
-
-  // Reset database endpoint triggers Mongoose seed reload
-  async function handleResetSeeds() {
-    try {
-      const base = apiUrl ? apiUrl.replace(/\/$/, "") : "";
-      const res = await fetch(`${base}/api/assignments/seed`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error("Seed failed " + res.status);
-      const data = await res.json();
-      setAssignments(data);
-      if (data[0]) {
-        setActiveNo(data[0].no);
-      }
-    } catch (err) {
-      console.error("Gagal menyetel ulang database seed:", err);
-      // Fallback local reset
-      setAssignments(seedAssignments);
-      setActiveNo(seedAssignments[0].no);
-    }
-  }
 
   function openAssignment(assignmentNo: number) {
     setActiveNo(assignmentNo);
@@ -233,9 +218,10 @@ export function App() {
       )}
       {activeModule === "database" && (
         <DatabasePage
+          apiUrl={apiUrl}
           assignments={assignments}
+          onApiUrlChange={setApiUrl}
           onAssignmentsChange={setAssignments}
-          onResetSeeds={handleResetSeeds}
         />
       )}
     </main>

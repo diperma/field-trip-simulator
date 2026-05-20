@@ -52,6 +52,9 @@ Current stack:
 - TypeScript
 - Vitest
 - `lucide-react`
+- Express API endpoints under `api/`
+- Mongoose/MongoDB Atlas integration for assignment persistence
+- Vercel backend deployment and GitHub Pages frontend deployment
 - Local TypeScript seed data copied from the workbook
 - Deterministic calculation functions with unit tests
 
@@ -125,6 +128,20 @@ Verification already performed:
 Tooling note:
 
 - `package.json` scripts use `--configLoader runner` for Vite/Vitest because the default config bundler hit a Windows parent-folder access issue in this workspace.
+
+## Current Cloud Persistence Status
+
+The repository is connected to GitHub, Vercel, and MongoDB, but production persistence needs special care:
+
+- MongoDB Atlas is intended to be the durable source for editable assignments.
+- The API includes a local JSON fallback (`local-backup-db.json`) for local development only; production must use MongoDB or return an error.
+- The deployed Vercel API was previously observed returning `storageType: Local JSON File`, meaning production writes were not reaching MongoDB.
+- `GET /api/assignments` must not auto-seed workbook examples when the assignment collection is empty. Empty MongoDB state should remain empty after refresh.
+- The reset database seed UI and `/api/assignments/seed` route have been removed to avoid accidental restoration of workbook examples.
+- The frontend keeps a browser local-storage cache, but production builds default to `https://field-trip-simulator.vercel.app` unless `VITE_API_BASE_URL` overrides it.
+- The MongoDB URI must be stored in environment variables such as Vercel `MONGODB_URI`; do not rely on hardcoded connection strings in source code.
+
+When working on database behavior, first check `reports/mongodb-connection-report.md` and verify `/api/db-status` reports `MongoDB Atlas Cloud` before treating persistence as real.
 
 ## Implemented App Behavior
 
