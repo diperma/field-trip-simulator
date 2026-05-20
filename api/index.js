@@ -188,7 +188,22 @@ app.get("/api/assignments", async (req, res) => {
   }
 });
 
-// POST a new assignment or bulk restore
+function stripMongoReadonlyFields(record) {
+  if (!record || typeof record !== "object") return record;
+  const { _id, __v, createdAt, updatedAt, ...editable } = record;
+  return editable;
+}
+
+function isPlainObjectPayload(payload) {
+  return payload && typeof payload === "object" && !Array.isArray(payload);
+}
+
+async function replaceAssignments(payload) {
+  await Assignment.deleteMany({});
+  return Assignment.insertMany(payload.map(stripMongoReadonlyFields));
+}
+
+// POST a new assignment only. Bulk replacement is intentionally explicit below.
 app.post("/api/assignments", async (req, res) => {
   try {
     await connectToDatabase();
@@ -197,8 +212,9 @@ app.post("/api/assignments", async (req, res) => {
     if (useLocalFallback) {
       const db = readLocalDb();
       if (Array.isArray(payload)) {
-        writeLocalDb(payload);
-        return res.json(payload);
+        return res.status(409).json({
+          error: "Bulk replace is disabled on /api/assignments. Use /api/assignments/replace?confirm=replace-assignments.",
+        });
       } else {
         db.push(payload);
         writeLocalDb(db);
@@ -207,14 +223,42 @@ app.post("/api/assignments", async (req, res) => {
     }
 
     if (Array.isArray(payload)) {
-      // Bulk insert/overwrite
-      await Assignment.deleteMany({});
-      const records = await Assignment.insertMany(payload);
-      return res.json(records);
+      return res.status(409).json({
+        error: "Bulk replace is disabled on /api/assignments. Use /api/assignments/replace?confirm=replace-assignments.",
+      });
+    }
+    if (!isPlainObjectPayload(payload)) {
+      return res.status(400).json({ error: "Assignment payload must be an object." });
     }
 
-    const record = await Assignment.create(payload);
+    const record = await Assignment.create(stripMongoReadonlyFields(payload));
     res.json(record);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Explicit full database replacement for deliberate backup restore / raw JSON edits.
+app.post("/api/assignments/replace", async (req, res) => {
+  try {
+    await connectToDatabase();
+    const payload = req.body;
+
+    if (req.query.confirm !== "replace-assignments") {
+      return res.status(400).json({ error: "Missing confirm=replace-assignments query parameter." });
+    }
+    if (!Array.isArray(payload)) {
+      return res.status(400).json({ error: "Replacement payload must be an array of assignments." });
+    }
+
+    if (useLocalFallback) {
+      const sanitized = payload.map(stripMongoReadonlyFields);
+      writeLocalDb(sanitized);
+      return res.json(sanitized);
+    }
+
+    const records = await replaceAssignments(payload);
+    return res.json(records);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -225,22 +269,30 @@ app.put("/api/assignments/:no", async (req, res) => {
   try {
     await connectToDatabase();
     const no = parseInt(req.params.no, 10);
+    const payload = stripMongoReadonlyFields(req.body);
+
+    if (!isPlainObjectPayload(req.body)) {
+      return res.status(400).json({ error: "Assignment payload must be an object." });
+    }
 
     if (useLocalFallback) {
       const db = readLocalDb();
       const idx = db.findIndex((a) => a.no === no);
       if (idx !== -1) {
-        db[idx] = { ...db[idx], ...req.body, no };
+        db[idx] = { ...db[idx], ...payload, no };
         writeLocalDb(db);
         return res.json(db[idx]);
       } else {
-        return res.status(404).json({ error: "Assignment not found" });
+        const record = { ...payload, no };
+        db.push(record);
+        writeLocalDb(db);
+        return res.json(record);
       }
     }
 
     const record = await Assignment.findOneAndUpdate(
       { no },
-      { $set: req.body },
+      { $set: { ...payload, no } },
       { new: true, runValidators: true, upsert: true }
     );
     res.json(record);

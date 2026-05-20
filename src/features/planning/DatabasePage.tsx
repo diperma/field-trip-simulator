@@ -130,7 +130,7 @@ export function DatabasePage({
     try {
       const parsed = JSON.parse(jsonText);
       const base = apiUrl ? apiUrl.replace(/\/$/, "") : "";
-      const res = await fetch(`${base}/api/assignments`, {
+      const res = await fetch(`${base}/api/assignments/replace?confirm=replace-assignments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(parsed),
@@ -160,7 +160,7 @@ export function DatabasePage({
         }
 
         const base = apiUrl ? apiUrl.replace(/\/$/, "") : "";
-        const res = await fetch(`${base}/api/assignments`, {
+        const res = await fetch(`${base}/api/assignments/replace?confirm=replace-assignments`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(parsed),

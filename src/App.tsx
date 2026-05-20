@@ -1,5 +1,5 @@
 import { BarChart3, CalendarDays, ClipboardList, Database } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { employees } from "./data/employees";
 import { provinceRates } from "./data/rates";
 import { seedAssignments } from "./data/seedAssignments";
@@ -78,6 +78,7 @@ export function App() {
 
   // Track if we are currently performing initial backend fetch to prevent sync race conditions
   const [isHydrating, setIsHydrating] = useState(true);
+  const backendSnapshotRef = useRef<AssignmentInput[] | null>(null);
 
   // Load from database backend on boot & when API URL changes
   useEffect(() => {
@@ -89,6 +90,7 @@ export function App() {
         if (!res.ok) throw new Error("HTTP error " + res.status);
         const data = await res.json();
         if (active && Array.isArray(data)) {
+          backendSnapshotRef.current = data;
           setAssignments(data);
           // Set activeNo if not already pointing to a valid one
           if (!data.some((a) => a.no === activeNo)) {
@@ -136,23 +138,19 @@ export function App() {
       }).format(new Date()),
     );
 
-    // Sync to backend DB (Only if we aren't currently loading the state from DB on start)
-    if (!isHydrating) {
-      const timer = setTimeout(async () => {
-        try {
-          const res = await fetch(`${apiUrl}/api/assignments`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(assignments),
-          });
-          if (!res.ok) throw new Error("Sync HTTP error " + res.status);
-        } catch (err) {
-          console.warn("⚠️ Sinkronisasi database backend tertunda:", err);
-        }
-      }, 500); // 500ms debounce to prevent spamming server on rapid keystrokes
+    if (isHydrating || !backendSnapshotRef.current) return;
 
-      return () => clearTimeout(timer);
-    }
+    const previous = backendSnapshotRef.current;
+    const timer = setTimeout(async () => {
+      try {
+        await syncAssignmentChanges(apiUrl, previous, assignments);
+        backendSnapshotRef.current = assignments;
+      } catch (err) {
+        console.warn("⚠️ Sinkronisasi database backend tertunda:", err);
+      }
+    }, 500); // 500ms debounce to prevent spamming server on rapid keystrokes
+
+    return () => clearTimeout(timer);
   }, [assignments, apiUrl, isHydrating]);
 
   function openAssignment(assignmentNo: number) {
@@ -226,6 +224,54 @@ export function App() {
       )}
     </main>
   );
+}
+
+function comparableAssignment(assignment: AssignmentInput): AssignmentInput {
+  const { _id, __v, createdAt, updatedAt, ...editable } = assignment as AssignmentInput & {
+    _id?: string;
+    __v?: number;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  return editable;
+}
+
+async function syncAssignmentChanges(
+  apiUrl: string,
+  previousAssignments: AssignmentInput[],
+  nextAssignments: AssignmentInput[],
+) {
+  const previousByNo = new Map(previousAssignments.map((assignment) => [assignment.no, comparableAssignment(assignment)]));
+  const nextByNo = new Map(nextAssignments.map((assignment) => [assignment.no, comparableAssignment(assignment)]));
+
+  const requests: Promise<Response>[] = [];
+
+  for (const [no, next] of nextByNo.entries()) {
+    const previous = previousByNo.get(no);
+    if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      requests.push(
+        fetch(`${apiUrl}/api/assignments/${no}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(next),
+        }),
+      );
+    }
+  }
+
+  for (const no of previousByNo.keys()) {
+    if (!nextByNo.has(no)) {
+      requests.push(fetch(`${apiUrl}/api/assignments/${no}`, { method: "DELETE" }));
+    }
+  }
+
+  if (requests.length === 0) return;
+
+  const responses = await Promise.all(requests);
+  const failed = responses.find((res) => !res.ok);
+  if (failed) {
+    throw new Error(`Sync HTTP error ${failed.status}`);
+  }
 }
 
 function loadAssignments(): AssignmentInput[] {

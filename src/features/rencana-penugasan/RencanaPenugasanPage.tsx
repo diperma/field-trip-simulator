@@ -3,14 +3,12 @@ import {
   CalendarDays,
   CopyPlus,
   Plus,
-  RotateCcw,
   Save,
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { employees } from "../../data/employees";
 import { provinceRates } from "../../data/rates";
-import { seedAssignments } from "../../data/seedAssignments";
 import type {
   AssignmentComputed,
   AssignmentInput,
@@ -93,7 +91,7 @@ export function RencanaPenugasanPage({
   const scheduleConflicts = findScheduleConflicts(computedAssignments);
 
   // Local UI state
-  const [confirmAction, setConfirmAction] = useState<"delete" | "reset" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"delete" | null>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [openOverrides, setOpenOverrides] = useState<Set<number>>(new Set());
   // Tracks the raw text in each employee name input (can be mid-typing / invalid)
@@ -174,11 +172,6 @@ export function RencanaPenugasanPage({
     onActiveNoChange(next[0]?.no ?? 0);
   }
 
-  function resetToSeeds() {
-    onAssignmentsChange(seedAssignments);
-    onActiveNoChange(seedAssignments[0].no);
-  }
-
   function removeMember(index: number) {
     updateActive({
       ...activeAssignment,
@@ -206,7 +199,7 @@ export function RencanaPenugasanPage({
   }
 
   // ── Inline confirm ──────────────────────────────────────────────────────
-  function requestConfirm(action: "delete" | "reset") {
+  function requestConfirm(action: "delete") {
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
     setConfirmAction(action);
     confirmTimer.current = setTimeout(() => setConfirmAction(null), 5000);
@@ -214,7 +207,6 @@ export function RencanaPenugasanPage({
 
   function executeConfirm() {
     if (confirmAction === "delete") deleteAssignment();
-    else if (confirmAction === "reset") resetToSeeds();
     setConfirmAction(null);
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
   }
@@ -308,9 +300,7 @@ export function RencanaPenugasanPage({
               /* Inline confirm replaces action buttons */
               <div className="confirm-inline">
                 <span>
-                  {confirmAction === "delete"
-                    ? "Hapus penugasan ini?"
-                    : "Kembalikan ke contoh workbook?"}
+                  Hapus penugasan ini?
                 </span>
                 <button className="confirm-yes" type="button" onClick={executeConfirm}>
                   Ya
@@ -336,14 +326,6 @@ export function RencanaPenugasanPage({
                   title="Hapus penugasan"
                 >
                   <Trash2 size={18} />
-                </button>
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={() => requestConfirm("reset")}
-                  title="Kembalikan contoh workbook"
-                >
-                  <RotateCcw size={18} />
                 </button>
               </>
             )}
